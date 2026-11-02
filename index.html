@@ -26,6 +26,22 @@ img { max-width: 100%; }
 .auth-links { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .auth-msg.err { color: var(--bad); }
 .who { font-size: 12px; color: var(--muted); }
+button.fresh-btn { display: inline-flex; align-items: center; gap: 8px; }
+header.top { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+.top > div:first-child { min-width: 0; }
+@media (max-width: 900px) { header.top { grid-template-columns: minmax(0, 1fr); } }
+.top-side { display: grid; justify-items: end; gap: 8px; margin-left: auto; }
+.top-side .actions { justify-content: flex-end; }
+@media (max-width: 900px) { .top-side { justify-items: start; margin-left: 0; } .top-side .actions { justify-content: flex-start; } }
+.fresh-btn .dot, .fresh .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot.ok { background: var(--good-bar); } .dot.due { background: #d9a21b; } .dot.old { background: var(--bad-bar); }
+.fresh { display: grid; gap: 12px; }
+.fresh-item { border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: grid; gap: 8px; background: var(--surface-2); }
+.fresh-item h3 { display: flex; align-items: center; gap: 8px; }
+.fresh-item .how { font-size: 13px; color: var(--ink-2); }
+.fresh-item .how b { color: var(--ink); }
+.fresh-item .when { font-size: 12px; color: var(--muted); }
+.fresh-auto { font-size: 13px; color: var(--ink-2); display: grid; gap: 4px; }
 /* Layout: ledger workspace — KPI strip; full-width holdings table (cash row last); sector pie beside sector check; gain chart below */
 :root {
   --bg: #f4f6f8;
@@ -397,6 +413,8 @@ input.n { font-family: var(--f-num); }
       <div class="sync" id="sync"></div>
       <div class="who" id="who"></div>
     </div>
+    <div class="top-side">
+    <button type="button" class="fresh-btn" id="btnFresh"><i class="dot" id="freshDot"></i>Daten alle aktualisiert?</button>
     <div class="actions">
       <button type="button" class="icon" id="btnTheme" aria-label="Hell- oder Dunkelmodus"></button>
       <button type="button" id="btnHelp">Hilfe</button>
@@ -404,6 +422,7 @@ input.n { font-family: var(--f-num); }
       <button type="button" id="btnExport" hidden>Als CSV sichern</button>
       <button type="button" class="primary" id="btnNewPos" disabled>+ Neue Position</button>
       <button type="button" class="ghost" id="btnLogout" title="Abmelden">Abmelden</button>
+    </div>
     </div>
   </header>
 
@@ -464,6 +483,7 @@ input.n { font-family: var(--f-num); }
 <dialog class="modal" id="reentryDlg" aria-label="Wieder einsteigen"></dialog>
 <dialog class="modal wide" id="importDlg" aria-label="Dateien importieren"></dialog>
 <dialog class="modal wide" id="helpDlg" aria-label="Hilfe"></dialog>
+<dialog class="modal wide" id="freshDlg" aria-label="Daten aktualisieren"></dialog>
 
 <dialog class="modal" id="posDlg">
   <div class="sheet-in">
@@ -761,6 +781,8 @@ input.n { font-family: var(--f-num); }
     if ($("cashDlg").open) renderCashDlg();
     if ($("checkDlg").open) renderCheckDlg();
     autoEvalMissing();
+    paintFresh();
+    if ($("freshDlg").open && !$("freshDlg").contains(document.activeElement)) renderFresh();
   }
 
   const COLS = {
@@ -1513,6 +1535,7 @@ Sektor im Depot: ${sec ? `Ist ${pctU(sec.actual)}, Ziel ${pctU(sec.target)}` : "
     }
     const op = t.closest("[data-open]"); if (op) { if ($("sectorDlg").open) $("sectorDlg").close(); openDetail(op.dataset.open); return; }
     if (act === "newpos") { openPosForm(null); return; }
+    if (act === "openImport") { $("freshDlg").close(); $("btnUpdate").click(); return; }
     if (act === "editpos") { openPosForm(state.detail); return; }
     if (act === "check") { renderCheckDlg(); $("checkDlg").showModal(); return; }
     if (act === "startEmpty") { await write(() => P.depot.set({ ...state.settings, onboarded: true }), ""); openPosForm(null); return; }
@@ -1574,6 +1597,47 @@ Sektor im Depot: ${sec ? `Ist ${pctU(sec.actual)}, Ziel ${pctU(sec.target)}` : "
   $("btnNewPos").onclick = () => openPosForm(null);
   $("btnUpdate").onclick = () => { state.imp = null; renderImport(); $("importDlg").showModal(); };
   $("btnHelp").onclick = () => { renderHelp(); $("helpDlg").showModal(); };
+  // ---------- "Daten alle aktualisiert?": what runs by itself and what needs a manual export ----------
+  const ageClass = (d, okDays, dueDays) => { const a = daysSince(d); return !d ? "old" : a <= okDays ? "ok" : a <= dueDays ? "due" : "old"; };
+  const ageText = (d) => { if (!d) return "noch nie"; const a = daysSince(d); return a <= 0 ? "heute" : a === 1 ? "gestern" : `vor ${a} Tagen (${fDate(d)})`; };
+  function freshState() {
+    const degAcc = accList().find(([, a]) => /degiro/i.test(a.name))?.[1];
+    const oskarId = Object.keys(state.positions).find((id) => /oskar/i.test(state.positions[id].broker || "") && !state.positions[id].test);
+    const oskar = oskarId ? state.positions[oskarId] : null;
+    const sync = state.settings.sync?.at?.slice(0, 10);
+    const items = [
+      { key: "auto", cls: ageClass(sync, 1, 3), date: sync },
+      { key: "degiro", cls: ageClass(degAcc?.date, 14, 35), date: degAcc?.date },
+      { key: "oskar", cls: oskar ? ageClass(oskar.priceDate, 14, 35) : "ok", date: oskar?.priceDate, id: oskarId },
+    ];
+    const worst = items.some((i) => i.cls === "old") ? "old" : items.some((i) => i.cls === "due") ? "due" : "ok";
+    return { items, worst, oskar, oskarId };
+  }
+  function paintFresh() { const f = freshState(); $("freshDot").className = "dot " + f.worst; $("btnFresh").title = { ok: "Alles aktuell", due: "Bald aktualisieren", old: "Bitte aktualisieren" }[f.worst]; }
+  function renderFresh() {
+    const f = freshState(), [auto, deg, osk] = f.items;
+    const dep = f.oskarId ? state.trades.filter((t) => t.pos === f.oskarId && t.type !== "sell").reduce((s, t) => s + tradeEur(t, "EUR"), 0) : 0;
+    $("freshDlg").innerHTML = `<div class="sheet-in">
+      <div class="sheet-h"><div><div class="eyebrow">Daten</div><h2>Daten alle aktualisiert?</h2><p>Grün = aktuell, Gelb = bald fällig, Rot = bitte aktualisieren.</p></div><button type="button" class="ghost" data-close>Schließen</button></div>
+      <div class="fresh">
+        <div class="fresh-item"><h3><i class="dot ${auto.cls}"></i>Automatisch jeden Abend</h3>
+          <div class="fresh-auto"><span>Kurse aller Positionen, Wechselkurse und Bewertungen</span><span>Interactive Brokers (Käufe, Verkäufe, Cash) und Coinbase (Bestandsabgleich)</span></div>
+          <div class="when">Letztes Update: ${ageText(auto.date)}${state.settings.sync?.text ? " · " + esc(state.settings.sync.text) : ""}</div></div>
+        <div class="fresh-item"><h3><i class="dot ${deg.cls}"></i>Degiro</h3>
+          <div class="how"><b>Degiro:</b> Web-Version → Posteingang/Aktivität → <b>Transaktionen</b> und <b>Portfolio</b> → jeweils <b>Export → CSV</b>. Danach beide Dateien hier über „Dateien importieren“ hineinziehen.</div>
+          <div class="when">Zuletzt importiert: ${ageText(deg.date)}</div>
+          <div><button type="button" class="small primary" data-act="openImport">Dateien importieren</button></div></div>
+        ${f.oskar ? `<div class="fresh-item"><h3><i class="dot ${osk.cls}"></i>Oskar</h3>
+          <div class="how"><b>Oskar:</b> Screenshot „Rendite-Details“ (Portfoliowert → Info-Symbol bei „Rendite“). Die beiden Werte hier eintragen:</div>
+          <form id="oskarForm" class="grid3" style="align-items:end">
+            <label>Portfoliowert (€)<input id="os-value" class="n" inputmode="decimal" value="${inNum(f.oskar.price)}" required></label>
+            <label>Einzahlungen (€)<input id="os-dep" class="n" inputmode="decimal" value="${inNum(+dep.toFixed(2))}" required></label>
+            <button type="submit" class="primary">Speichern</button>
+          </form>
+          <div class="when">Zuletzt aktualisiert: ${ageText(osk.date)}</div></div>` : ""}
+      </div></div>`;
+  }
+  $("btnFresh").onclick = () => { renderFresh(); $("freshDlg").showModal(); };
   addEventListener("resize", () => { const g = $("detail").querySelector(".grip"); if (g && $("detail").open) g.style.left = $("detail").getBoundingClientRect().left + "px"; });
 
   async function savePrice(id, raw, date) {
@@ -1646,6 +1710,20 @@ Sektor im Depot: ${sec ? `Ist ${pctU(sec.actual)}, Ziel ${pctU(sec.target)}` : "
       if (!id) { data.ticker = data.symbol; id = slug(data.symbol); let i = 2; while (state.positions[id]) id = slug(data.symbol) + "-" + i++; data.order = Object.keys(state.positions).length + 1; }
       const ok = await write(() => editId ? P.pos.doc(id).update(data) : P.pos.doc(id).set(data), editId ? "Position gespeichert" : "Position angelegt");
       if (ok) { $("posDlg").close(); if (!editId) openDetail(id); }
+      return;
+    }
+    if (f.id === "oskarForm") {
+      const v = parseNum($("os-value").value), dep = parseNum($("os-dep").value), fr = freshState();
+      if (!(v > 0 && dep > 0) || !fr.oskarId) { toast("Bitte Portfoliowert und Einzahlungen eintragen."); return; }
+      const buys = state.trades.filter((t) => t.pos === fr.oskarId && t.type !== "sell");
+      const main = buys[0];
+      const ok = await write(async () => {
+        await P.pos.doc(fr.oskarId).update({ price: v, priceDate: TODAY });
+        // the deposits are kept as one buy of 1 unit; further buys of this position are folded into it
+        if (main) { await P.tr.doc(main._id).update({ price: dep, amount: dep, amountEur: dep, shares: 1, fx: 1 }); for (const t of buys.slice(1)) await P.tr.doc(t._id).delete(); }
+        else await P.tr.doc(fr.oskarId + "-einzahlungen").set({ pos: fr.oskarId, type: "buy", date: TODAY, price: dep, shares: 1, amount: dep, fx: 1, amountEur: dep, fees: 0 });
+      }, "Oskar aktualisiert");
+      if (ok) renderFresh();
       return;
     }
     if (f.dataset.acc) {
