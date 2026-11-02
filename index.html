@@ -1296,44 +1296,62 @@ Sektor im Depot: ${sec ? `Ist ${pctU(sec.actual)}, Ziel ${pctU(sec.target)}` : "
     for (const n of names) { const i = h.findIndex((x) => x.startsWith(n.toLowerCase())); if (i >= 0) return i; }
     return -1;
   }
-  const posByIsin = (isin) => {
+  // position for an ISIN: same broker first, then open before closed; plan positions never
+  const posByIsin = (isin, brokerRe) => {
     const hits = Object.entries(state.positions).filter(([, p]) => !p.test && (p.isin || "").toUpperCase() === isin);
-    return (hits.find(([id]) => calc(id).open) || hits[0] || [])[0];
+    const pick = (list) => list.find(([id]) => calc(id).open) || list[0];
+    return ((brokerRe && pick(hits.filter(([, p]) => brokerRe.test(p.broker || "")))) || pick(hits) || [])[0];
   };
+  const DAY = 864e5;
   function parseBrokerCsv(text, fname) {
     const rows = splitCsv(text); if (rows.length < 2) throw new Error(`${fname}: Datei ist leer.`);
-    const H = rows[0], R = rows.slice(1), items = [];
+    const H = rows[0], R = rows.slice(1), items = [], deg = /degiro/i;
     const iIsin = col(H, "ISIN", "Symbol/ISIN"), iQty = col(H, "Anzahl", "Quantity", "Menge"), iDate = col(H, "Datum", "Date");
-    const iPrice = col(H, "Kurs", "Price"), iClose = col(H, "Schlusskurs", "Closing", "Close"), iProd = col(H, "Produkt", "Product", "Name");
-    const iEur = col(H, "Wert in EUR", "Value in EUR", "Wert", "Value"), iFx = col(H, "Wechselkurs", "Exchange rate"), iFee = col(H, "Transaktionskosten", "Transaction", "Gebühr", "Fee"), iOrder = col(H, "Order-ID", "Order ID");
+    const iPrice = col(H, "Kurs", "Price"), iClose = col(H, "Schlusskurs", "Schlußkurs", "Closing", "Close"), iProd = col(H, "Produkt", "Product", "Name");
+    const iEur = col(H, "Wert EUR", "Wert in EUR", "Value EUR", "Value in EUR"), iFx = col(H, "Wechselkurs", "Exchange rate");
+    const iFee = col(H, "Transaktionsgebühren", "Transaktionskosten", "Transaction costs", "Transaction and"), iAutoFx = col(H, "AutoFX"), iOrder = col(H, "Order-ID", "Order ID");
     const isTx = iIsin >= 0 && iQty >= 0 && iDate >= 0 && iPrice >= 0;
     const isPf = !isTx && iIsin >= 0 && iQty >= 0 && (iClose >= 0 || iPrice >= 0);
     if (!isTx && !isPf) throw new Error(`${fname}: Format nicht erkannt. Unterstützt sind Degiro-Exporte „Portfolio“ und „Transaktionen“ (CSV).`);
     if (isPf) {
       for (const r of R) {
         const isin = (r[iIsin] || "").trim().toUpperCase(), prod = (r[iProd] || "").trim();
-        if (!isin && /cash/i.test(prod)) { const v = parseNum(r[iEur >= 0 ? iEur : iQty]); if (!isNaN(v)) items.push({ kind: "cash", label: `Cash bei Degiro: ${eur(v)}`, amount: v, on: true }); continue; }
+        if (!isin && /cash/i.test(prod)) { const v = parseNum(r[iEur]); if (!isNaN(v)) items.push({ kind: "cash", label: `Cash bei Degiro: ${eur(v)}`, amount: v, on: true }); continue; }
         if (!isIsin(isin)) continue;
-        const qty = parseNum(r[iQty]), price = parseNum(r[iClose >= 0 ? iClose : iPrice]), pid = posByIsin(isin);
+        const qty = parseNum(r[iQty]), price = parseNum(r[iClose >= 0 ? iClose : iPrice]), pid = posByIsin(isin, deg);
         if (!pid) { items.push({ kind: "unknown", label: `${prod || isin} (${isin}) ist nicht im Dashboard`, on: false }); continue; }
         const c = calc(pid), diff = Math.abs(c.shares - qty) > 1e-6;
         items.push({ kind: "price", pid, price, label: `${label(c.p)}: Kurs ${fPrice(c.price)} → ${fPrice(price)} ${c.cur}` + (diff ? ` · Achtung: Degiro ${fShares(qty)} Anteile, Dashboard ${fShares(c.shares)}` : ""), warn: diff, on: price > 0 });
       }
-    } else {
-      for (const r of R) {
-        const isin = (r[iIsin] || "").trim().toUpperCase(); if (!isIsin(isin)) continue;
-        const qty = parseNum(r[iQty]), price = parseNum(r[iPrice]), date = parseDate(r[iDate]); if (!qty || !(price > 0) || !date) continue;
-        const prod = (r[iProd] || "").trim(), eurVal = Math.abs(parseNum(r[iEur])), fee = Math.abs(parseNum(r[iFee])) || 0, order = iOrder >= 0 ? (r[iOrder] || "").trim() : "";
-        const type = qty < 0 ? "sell" : "buy", shares = Math.abs(qty), amount = +(price * shares).toFixed(4);
-        let pid = posByIsin(isin);
-        const extId = order ? "degiro-" + order : `degiro-${isin}-${date}-${shares}-${price}`;
-        const dupe = state.trades.some((t) => t.extId === extId || (t.pos === pid && t.date === date && Math.abs(+t.shares - shares) < 1e-9 && t.type === type && Math.abs(+t.price - price) / price < .005));
-        const cur = pid ? curOf(state.positions[pid]) : "EUR";
-        const amountEur = eurVal > 0 ? eurVal : (cur === "EUR" ? amount : amount / (rateOn(cur, date)?.rate || 1));
-        items.push({ kind: "trade", pid, isin, prod, data: { type, date, price, shares, amount, fx: +(amount / amountEur).toFixed(6), amountEur: +amountEur.toFixed(4), fees: fee, extId },
-          label: `${fDate(date)} · ${type === "sell" ? "Verkauf" : "Kauf"} ${fShares(shares)} × ${pid ? label(state.positions[pid]) : prod || isin} zu ${fPrice(price)}${pid ? "" : " · neue Position wird angelegt"}${dupe ? " · schon vorhanden" : ""}`, on: !dupe, skip: dupe });
-      }
+      return items;
     }
+    // transactions: partial executions of one order are merged first, so they compare with how they were recorded
+    const orders = new Map();
+    R.forEach((r, i) => {
+      const isin = (r[iIsin] || "").trim().toUpperCase(); if (!isIsin(isin)) return;
+      const qty = parseNum(r[iQty]), price = parseNum(r[iPrice]), date = parseDate(r[iDate]); if (!qty || !(price > 0) || !date) return;
+      const order = iOrder >= 0 ? (r[iOrder] || "").trim() : "", key = order ? `${order}|${qty < 0 ? "s" : "b"}` : `row${i}`;
+      const cur = (H[iPrice + 1] || "").trim() === "" ? (r[iPrice + 1] || "EUR").trim().toUpperCase() : "EUR";
+      const o = orders.get(key) || { isin, prod: (r[iProd] || "").trim(), date, type: qty < 0 ? "sell" : "buy", cur, order, shares: 0, amount: 0, eur: 0, fees: 0, fx: 0 };
+      o.shares += Math.abs(qty); o.amount += Math.abs(qty) * price; o.eur += Math.abs(parseNum(r[iEur])) || 0;
+      o.fees += (Math.abs(parseNum(r[iFee])) || 0) + (iAutoFx >= 0 ? Math.abs(parseNum(r[iAutoFx])) || 0 : 0);
+      o.fx = parseNum(r[iFx]) || o.fx; if (date < o.date) o.date = date;
+      orders.set(key, o);
+    });
+    for (const o of orders.values()) {
+      const pid = posByIsin(o.isin, deg), cur = pid ? curOf(state.positions[pid]) : (["EUR", "USD", "CHF", "GBP"].includes(o.cur) ? o.cur : "EUR");
+      const price = +(o.amount / o.shares).toFixed(4), amount = +o.amount.toFixed(4);
+      const amountEur = o.eur > 0 ? o.eur : (cur === "EUR" ? amount : amount / (o.fx || rateOn(cur, o.date)?.rate || 1));
+      const extId = `degiro-${o.order || o.isin + "-" + o.date}-${o.type}`;
+      // already recorded: same id, or same position, type and number of shares within two weeks (diary dates differ slightly from execution dates)
+      const dupe = state.trades.some((t) => t.extId === extId || (pid && t.pos === pid && t.type === o.type && Math.abs(+t.shares - o.shares) < 1e-6 && Math.abs(Date.parse(t.date) - Date.parse(o.date)) <= 14 * DAY));
+      // same trade recorded with a clearly different date: offer to correct the date instead of adding it twice
+      const moved = !dupe && pid && state.trades.find((t) => t.pos === pid && t.type === o.type && Math.abs(+t.shares - o.shares) < 1e-6 && Math.abs(+t.price - price) / price < .005);
+      if (moved) { items.push({ kind: "fixdate", tradeId: moved._id, date: o.date, label: `${label(state.positions[pid])}: ${o.type === "sell" ? "Verkauf" : "Kauf"} ${fShares(o.shares)} zu ${fPrice(price)} steht im Dashboard am ${fDate(moved.date)}, bei Degiro am ${fDate(o.date)} → Datum korrigieren`, warn: true, on: true }); continue; }
+      items.push({ kind: "trade", pid, isin: o.isin, prod: o.prod, cur, data: { type: o.type, date: o.date, price, shares: o.shares, amount, fx: +(amount / amountEur).toFixed(6), amountEur: +amountEur.toFixed(4), fees: +o.fees.toFixed(2), extId },
+        label: `${fDate(o.date)} · ${o.type === "sell" ? "Verkauf" : "Kauf"} ${fShares(o.shares)} × ${pid ? label(state.positions[pid]) : o.prod || o.isin} zu ${fPrice(price)} ${cur}${pid ? "" : " · neue Position wird angelegt"}${dupe ? " · schon vorhanden" : ""}`, on: !dupe, skip: dupe });
+    }
+    items.sort((x, y) => (!!x.skip - !!y.skip) || (y.data?.date || "").localeCompare(x.data?.date || ""));
     return items;
   }
   function renderImport() {
@@ -1341,12 +1359,12 @@ Sektor im Depot: ${sec ? `Ist ${pctU(sec.actual)}, Ziel ${pctU(sec.target)}` : "
     const items = s.items || [];
     $("importDlg").innerHTML = `<div class="sheet-in">
       <div class="sheet-h"><div><div class="eyebrow">Update</div><h2>Dateien importieren</h2><p>Zieh Exporte deiner Broker hierher. Du siehst vorher genau, was übernommen wird.</p></div><button type="button" class="ghost" data-close>Schließen</button></div>
-      <div class="drop" data-drop tabindex="0" role="button"><b>Dateien hierher ziehen oder klicken</b><span class="muted small">Degiro: Portfolio.csv (Kurse, Bestände, Cash) und Transactions.csv (Käufe/Verkäufe) · INX-Excel (.xlsx) für neue Positionen</span></div>
+      <div class="drop" data-drop tabindex="0" role="button"><b>Dateien hierher ziehen oder klicken</b><span class="muted small">Degiro: Portfolio.csv (Kurse, Bestände, Cash) und Transactions.csv (Käufe/Verkäufe) · INX-Excel (.xlsx) · Backup (.json)</span></div>
       ${s.error ? `<div class="notice">${esc(s.error)}</div>` : ""}
       ${s.backup ? `<div class="box"><h3>Backup erkannt</h3><p>${Object.keys(s.backup.positions || {}).length} Positionen, ${Object.keys(s.backup.trades || {}).length} Transaktionen. Vorhandene Einträge mit gleicher Kennung werden überschrieben.</p></div>` : ""}
       ${s.excel ? `<div class="box"><h3>INX-Excel erkannt</h3><p>${s.excel.positions.length} Positionen, ${s.excel.positions.reduce((a, p) => a + p.trades.length, 0)} Transaktionen, ${s.excel.accounts.length} Cash-Konten. Positionen, die es schon gibt (gleicher Name), werden übersprungen.</p></div>` : ""}
       ${items.length ? `<div class="sec"><div class="sec-h"><h3>Vorschau</h3><span class="muted small">${items.filter((i) => i.on).length} von ${items.length} ausgewählt</span></div>
-        <div class="imp-list">${items.map((it, i) => `<label class="imp ${it.skip ? "skip" : ""}"><input type="checkbox" data-imp="${i}" ${it.on ? "checked" : ""} ${it.kind === "unknown" ? "disabled" : ""}><span>${esc(it.label)}</span>${it.warn ? `<span class="chip warn">prüfen</span>` : it.kind === "cash" ? `<span class="chip">Cash</span>` : it.kind === "trade" ? `<span class="chip info">${it.data.type === "sell" ? "Verkauf" : "Kauf"}</span>` : ""}</label>`).join("")}</div></div>` : ""}
+        <div class="imp-list">${items.map((it, i) => `<label class="imp ${it.skip ? "skip" : ""}"><input type="checkbox" data-imp="${i}" ${it.on ? "checked" : ""} ${it.kind === "unknown" ? "disabled" : ""}><span>${esc(it.label)}</span>${it.kind === "fixdate" ? `<span class="chip warn">Datum</span>` : it.warn ? `<span class="chip warn">prüfen</span>` : it.kind === "cash" ? `<span class="chip">Cash</span>` : it.kind === "trade" ? `<span class="chip info">${it.data.type === "sell" ? "Verkauf" : "Kauf"}</span>` : ""}</label>`).join("")}</div></div>` : ""}
       ${(items.length || s.excel || s.backup) ? `<div class="row-end"><span class="muted small" id="impProg"></span><button type="button" class="primary" id="impGo">Übernehmen</button></div>` : ""}
       <div class="muted small">Tipp: Interactive Brokers und Coinbase können automatisch abgeglichen werden. Frag dazu Claude im Chat.</div>
     </div>`;
@@ -1397,6 +1415,7 @@ Sektor im Depot: ${sec ? `Ist ${pctU(sec.actual)}, Ziel ${pctU(sec.target)}` : "
       const ops = [], created = {};
       for (const it of (s.items || []).filter((i) => i.on)) {
         if (it.kind === "price") ops.push(() => P.pos.doc(it.pid).update({ price: it.price, priceDate: TODAY }));
+        if (it.kind === "fixdate") ops.push(() => P.tr.doc(it.tradeId).update({ date: it.date }));
         if (it.kind === "cash") {
           const hit = accList().find(([, a]) => /degiro/i.test(a.name));
           ops.push(() => hit ? P.acc.doc(hit[0]).update({ amount: it.amount, date: TODAY }) : P.acc.add({ name: "Degiro", amount: it.amount, date: TODAY, order: Object.keys(state.accounts).length + 1 }));
@@ -1408,7 +1427,7 @@ Sektor im Depot: ${sec ? `Ist ${pctU(sec.actual)}, Ziel ${pctU(sec.target)}` : "
             if (!pid) {
               let id = slug(it.prod || it.isin), i = 2; while (state.positions[id] || Object.values(created).includes(id)) id = slug(it.prod || it.isin) + "-" + i++;
               created[it.isin] = pid = id;
-              const pos = { ticker: it.prod || it.isin, symbol: it.isin, isin: it.isin, name: it.prod || it.isin, sector: guessSector(it.prod) || "Ohne Sektor", currency: "EUR", broker: "Degiro", price: it.data.price, priceDate: it.data.date, order: Object.keys(state.positions).length + Object.keys(created).length };
+              const pos = { ticker: it.prod || it.isin, symbol: it.isin, isin: it.isin, name: it.prod || it.isin, sector: guessSector(it.prod) || "Ohne Sektor", currency: it.cur || "EUR", broker: "Degiro", price: it.data.price, priceDate: it.data.date, order: Object.keys(state.positions).length + Object.keys(created).length };
               ops.push(() => P.pos.doc(id).set(pos));
             }
           }
