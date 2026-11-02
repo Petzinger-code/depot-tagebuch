@@ -499,10 +499,11 @@ input.n { font-family: var(--f-num); }
 
 <script>
 (() => {
-  const SECTORS = ["Elektronik & Technologie", "Healthcare & Innovation", "Commodities", "Krypto", "Infrastruktur Digital", "Industrie 5.0", "Dividenden ETF", "Energie", "REIT", "Digital Security", "Green Investing", "FIN Tech", "E-Mobilität", "Aging Population"];
+  const SECTORS = ["Welt-ETF (MSCI World)", "Elektronik & Technologie", "Healthcare & Innovation", "Commodities", "Krypto", "Infrastruktur Digital", "Industrie 5.0", "Dividenden ETF", "Energie", "REIT", "Digital Security", "Green Investing", "FIN Tech", "E-Mobilität", "Aging Population"];
   const DEFAULT_TARGETS = { "Elektronik & Technologie": 20, "Healthcare & Innovation": 10, "Commodities": 10, "Krypto": 10, "Infrastruktur Digital": 8, "Industrie 5.0": 8, "Dividenden ETF": 8, "Energie": 5, "REIT": 5, "Digital Security": 5, "Green Investing": 4, "FIN Tech": 4, "E-Mobilität": 3, "Aging Population": 0 };
   const DEFAULT_CASH_TARGET = 20;
   const SECTOR_HINTS = [
+    ["Welt-ETF (MSCI World)", /msci world|ftse all-world|all-world|acwi|oskar/i],
     ["Krypto", /bitcoin|ethereum|solana|avalanche|crypto|krypto|btc|eth\b|xrp|cardano|polkadot/i],
     ["Commodities", /gold|silver|silber|platin|platinum|copper|kupfer|commodit|rohstoff|palladium|\boil\b|öl/i],
     ["REIT", /reit|propert|immobil|real estate/i],
