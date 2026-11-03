@@ -1326,6 +1326,14 @@ Sektor im Depot: ${sec ? `Ist ${pctU(sec.actual)}, Ziel ${pctU(sec.target)}` : "
     return ((brokerRe && pick(hits.filter(([, p]) => brokerRe.test(p.broker || "")))) || pick(hits) || [])[0];
   };
   const DAY = 864e5;
+  // plan position for an ISIN whose planned (virtual) buy is not later than the real trade; a plan already taken over
+  // with "Ins Depot übernehmen" counts as long as it holds no imported trades yet, so its planned buys get replaced too
+  const planByIsin = (isin, date) => Object.keys(state.positions).find((id) => {
+    const p = state.positions[id]; if ((p.isin || "").toUpperCase() !== isin) return false;
+    if (!p.test && !(p.adoptedAt && !state.trades.some((t) => t.pos === id && t.extId))) return false;
+    const start = state.trades.filter((t) => t.pos === id).map((t) => t.date).sort()[0] || p.priceDate || "";
+    return !start || date >= start;
+  });
   function parseBrokerCsv(text, fname) {
     const rows = splitCsv(text); if (rows.length < 2) throw new Error(`${fname}: Datei ist leer.`);
     const H = rows[0], R = rows.slice(1), items = [], deg = /degiro/i;
@@ -1362,17 +1370,19 @@ Sektor im Depot: ${sec ? `Ist ${pctU(sec.actual)}, Ziel ${pctU(sec.target)}` : "
       orders.set(key, o);
     });
     for (const o of orders.values()) {
-      const pid = posByIsin(o.isin, deg), cur = pid ? curOf(state.positions[pid]) : (["EUR", "USD", "CHF", "GBP"].includes(o.cur) ? o.cur : "EUR");
+      // a buy of an ISIN that is planned (on or after the planned date) executes the plan position instead of adding a second position
+      const plan = o.type === "buy" ? planByIsin(o.isin, o.date) : null;
+      const pid = plan || posByIsin(o.isin, deg), cur = pid ? curOf(state.positions[pid]) : (["EUR", "USD", "CHF", "GBP"].includes(o.cur) ? o.cur : "EUR");
       const price = +(o.amount / o.shares).toFixed(4), amount = +o.amount.toFixed(4);
       const amountEur = o.eur > 0 ? o.eur : (cur === "EUR" ? amount : amount / (o.fx || rateOn(cur, o.date)?.rate || 1));
       const extId = `degiro-${o.order || o.isin + "-" + o.date}-${o.type}`;
       // already recorded: same id, or same position, type and number of shares within two weeks (diary dates differ slightly from execution dates)
-      const dupe = state.trades.some((t) => t.extId === extId || (pid && t.pos === pid && t.type === o.type && Math.abs(+t.shares - o.shares) < 1e-6 && Math.abs(Date.parse(t.date) - Date.parse(o.date)) <= 14 * DAY));
+      const dupe = state.trades.some((t) => t.extId === extId || (!plan && pid && t.pos === pid && t.type === o.type && Math.abs(+t.shares - o.shares) < 1e-6 && Math.abs(Date.parse(t.date) - Date.parse(o.date)) <= 14 * DAY));
       // same trade recorded with a clearly different date: offer to correct the date instead of adding it twice
-      const moved = !dupe && pid && state.trades.find((t) => t.pos === pid && t.type === o.type && Math.abs(+t.shares - o.shares) < 1e-6 && Math.abs(+t.price - price) / price < .005);
+      const moved = !dupe && !plan && pid && state.trades.find((t) => t.pos === pid && t.type === o.type && Math.abs(+t.shares - o.shares) < 1e-6 && Math.abs(+t.price - price) / price < .005);
       if (moved) { items.push({ kind: "fixdate", tradeId: moved._id, date: o.date, label: `${label(state.positions[pid])}: ${o.type === "sell" ? "Verkauf" : "Kauf"} ${fShares(o.shares)} zu ${fPrice(price)} steht im Dashboard am ${fDate(moved.date)}, bei Degiro am ${fDate(o.date)} → Datum korrigieren`, warn: true, on: true }); continue; }
-      items.push({ kind: "trade", pid, isin: o.isin, prod: o.prod, cur, data: { type: o.type, date: o.date, price, shares: o.shares, amount, fx: +(amount / amountEur).toFixed(6), amountEur: +amountEur.toFixed(4), fees: +o.fees.toFixed(2), extId },
-        label: `${fDate(o.date)} · ${o.type === "sell" ? "Verkauf" : "Kauf"} ${fShares(o.shares)} × ${pid ? label(state.positions[pid]) : o.prod || o.isin} zu ${fPrice(price)} ${cur}${pid ? "" : " · neue Position wird angelegt"}${dupe ? " · schon vorhanden" : ""}`, on: !dupe, skip: dupe });
+      items.push({ kind: "trade", pid, plan, isin: o.isin, prod: o.prod, cur, data: { type: o.type, date: o.date, price, shares: o.shares, amount, fx: +(amount / amountEur).toFixed(6), amountEur: +amountEur.toFixed(4), fees: +o.fees.toFixed(2), extId },
+        label: `${fDate(o.date)} · ${o.type === "sell" ? "Verkauf" : "Kauf"} ${fShares(o.shares)} × ${pid ? label(state.positions[pid]) : o.prod || o.isin} zu ${fPrice(price)} ${cur}${plan ? (state.positions[plan].test ? " · Planposition wird zur echten Position" : " · ersetzt die geplanten Käufe") : pid ? "" : " · neue Position wird angelegt"}${dupe ? " · schon vorhanden" : ""}`, on: !dupe, skip: dupe });
     }
     items.sort((x, y) => (!!x.skip - !!y.skip) || (y.data?.date || "").localeCompare(x.data?.date || ""));
     return items;
@@ -1435,13 +1445,19 @@ Sektor im Depot: ${sec ? `Ist ${pctU(sec.actual)}, Ziel ${pctU(sec.target)}` : "
       }
       if (s.excel) n += await applyExcel(s.excel, prog);
       if (!state.settings.onboarded) await P.depot.set({ ...state.settings, onboarded: true });
-      const ops = [], created = {};
+      const ops = [], created = {}, converted = new Set();
       for (const it of (s.items || []).filter((i) => i.on)) {
         if (it.kind === "price") ops.push(() => P.pos.doc(it.pid).update({ price: it.price, priceDate: TODAY }));
         if (it.kind === "fixdate") ops.push(() => P.tr.doc(it.tradeId).update({ date: it.date }));
         if (it.kind === "cash") {
           const hit = accList().find(([, a]) => /degiro/i.test(a.name));
           ops.push(() => hit ? P.acc.doc(hit[0]).update({ amount: it.amount, date: TODAY }) : P.acc.add({ name: "Degiro", amount: it.amount, date: TODAY, order: Object.keys(state.accounts).length + 1 }));
+        }
+        if (it.kind === "trade" && it.plan && !converted.has(it.plan)) {
+          // replace the virtual plan buys with the real executions and turn the plan into a real position
+          converted.add(it.plan);
+          for (const t of state.trades.filter((t) => t.pos === it.plan && !t.extId)) ops.push(() => P.tr.doc(t._id).delete());
+          ops.push(() => P.pos.doc(it.plan).update({ test: false, broker: "Degiro", adoptedAt: TODAY }));
         }
         if (it.kind === "trade") {
           let pid = it.pid;
