@@ -172,8 +172,10 @@ table { width: 100%; border-collapse: collapse; }
 th, td { padding: 10px 9px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
 th:first-child, td:first-child, th.l, td.l { text-align: left; }
 thead th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; background: var(--surface); }
-thead th.sortable { cursor: pointer; user-select: none; }
-thead th.sortable:hover { color: var(--ink); }
+thead th.sortable, thead .th-ns .sortable { cursor: pointer; user-select: none; }
+thead th.sortable:hover, thead .th-ns .sortable:hover { color: var(--ink); }
+thead .th-ns .sortable.on { color: var(--ink); }
+thead .th-ns .arrow:empty { width: 0; }
 thead th .arrow { display: inline-block; width: 10px; }
 tbody tr.row { cursor: pointer; }
 tbody tr.row:hover td { background: var(--surface-2); }
@@ -798,6 +800,7 @@ input.n { font-family: var(--f-num); }
   function sortVal(r, k) {
     if (k === "symbol") return label(r.p).toLowerCase();
     if (k === "name") return (r.p.name || "").toLowerCase();
+    if (k === "sector") return (r.p.sector || "~").toLowerCase();
     if (k === "share") return r.value;
     if (k === "price") return r.priceEur;
     return r[k] ?? "";
@@ -810,9 +813,11 @@ input.n { font-family: var(--f-num); }
     const showCash = tab === "open" && (!q || "cash konto bank".includes(q) || accList().some(([, a]) => a.name.toLowerCase().includes(q)));
     if (!list.length && !showCash && !test.length) { $("table").innerHTML = `<div class="empty">${q ? "Keine Position passt zur Suche." : tab === "open" ? "Keine offenen Positionen." : "Das Archiv ist leer. Komplett verkaufte Positionen landen automatisch hier."}</div>`; return; }
     const [sk, sd] = state.sort[tab];
-    const sorter = (a, b) => { const x = sortVal(a, sk), y = sortVal(b, sk); return (x > y ? 1 : x < y ? -1 : 0) * sd; };
+    const cmp = (k, a, b) => { const x = sortVal(a, k), y = sortVal(b, k); return x > y ? 1 : x < y ? -1 : 0; };
+    const sorter = (a, b) => cmp(sk, a, b) * sd || (sk === "sector" ? cmp("name", a, b) : 0);
     list.sort(sorter); test.sort(sorter);
-    const head = COLS[tab].map(([k, l, a]) => k === "re" ? `<th></th>` : `<th class="sortable ${a || ""}" data-sort="${k}">${l}<span class="arrow">${sk === k ? (sd > 0 ? "↑" : "↓") : ""}</span></th>`).join("");
+    const arrow = (k) => `<span class="arrow">${sk === k ? (sd > 0 ? "↑" : "↓") : ""}</span>`;
+    const head = COLS[tab].map(([k, l, a]) => k === "re" ? `<th></th>` : k === "name" ? `<th class="l th-ns"><span class="sortable${sk === "name" ? " on" : ""}" data-sort="name">Name${arrow("name")}</span> / <span class="sortable${sk === "sector" ? " on" : ""}" data-sort="sector">Sektor${arrow("sector")}</span></th>` : `<th class="sortable ${a || ""}" data-sort="${k}">${l}<span class="arrow">${sk === k ? (sd > 0 ? "↑" : "↓") : ""}</span></th>`).join("");
     const rowHtml = (r) => {
       const p = r.p;
       const flags = (p.test ? `<span class="chip test">TEST</span> ` : "") + (r.cur !== "EUR" ? `<span class="chip mono">${esc(r.cur)}</span> ` : "") + (r.future ? `<span class="chip warn" data-tip="Ein Buchungsdatum liegt in der Zukunft">Datum prüfen</span>` : "");
@@ -1549,7 +1554,7 @@ Sektor im Depot: ${sec ? `Ist ${pctU(sec.actual)}, Ziel ${pctU(sec.target)}` : "
     if (act === "cash") { if ($("sectorDlg").open) $("sectorDlg").close(); renderCashDlg(); $("cashDlg").showModal(); return; }
     const sec = t.closest("[data-sector]"); if (sec) { state.sector = sec.dataset.sector; renderSectorDlg(); if (!$("sectorDlg").open) $("sectorDlg").showModal(); return; }
     const sortTh = t.closest("[data-sort]");
-    if (sortTh) { const tk = state.tab === "closed" ? "closed" : "open", k = sortTh.dataset.sort, s = state.sort[tk]; state.sort[tk] = [k, s[0] === k ? -s[1] : (["symbol", "name"].includes(k) ? 1 : -1)]; render(); return; }
+    if (sortTh) { const tk = state.tab === "closed" ? "closed" : "open", k = sortTh.dataset.sort, s = state.sort[tk]; state.sort[tk] = [k, s[0] === k ? -s[1] : (["symbol", "name", "sector"].includes(k) ? 1 : -1)]; render(); return; }
     const drop = t.closest("[data-drop-test]");
     if (drop) {
       if (!drop.classList.contains("armed")) { drop.classList.add("armed"); drop.textContent = drop.classList.contains("xdel") ? "Löschen?" : "Wirklich entfernen?"; return; }
