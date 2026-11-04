@@ -301,6 +301,8 @@ button.chip { cursor: pointer; }
 .gv .half.r .b { background: var(--good-bar); border-radius: 0 4px 4px 0; }
 .gv .val { font-family: var(--f-num); font-size: 12px; padding: 0 6px; color: var(--ink-2); white-space: nowrap; }
 .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--ink-2); }
+.gv-sums { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; }
+.gv-sums span { white-space: nowrap; } .gv-sums b { font-weight: 600; margin-left: 4px; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
 
 .acc-row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) 120px auto; gap: 8px; align-items: center; }
@@ -467,6 +469,7 @@ input.n { font-family: var(--f-num); }
     <section class="panel" aria-label="Gewinn und Verlust je Position">
       <div class="panel-h">
         <h2 id="gvTitle">Gewinn / Verlust je Position</h2>
+        <div class="gv-sums" id="gvSums"></div>
         <div class="legend"><span><i style="background:var(--good-bar)"></i>Gewinn</span><span><i style="background:var(--bad-bar)"></i>Verlust</span><span class="muted">in EUR, inkl. Gebühren</span></div>
       </div>
       <div class="panel-b"><div class="gv" id="gv"></div></div>
@@ -1120,6 +1123,8 @@ Sektor im Depot: ${sec ? `Ist ${pctU(sec.actual)}, Ziel ${pctU(sec.target)}` : "
   function renderGv(list) {
     $("gvTitle").textContent = state.tab === "open" ? "Gewinn / Verlust je offener Position" : "Gewinn / Verlust je archivierter Position";
     list = list.slice().sort((a, b) => b.gain - a.gain);
+    const loss = list.reduce((s, r) => s + Math.min(r.gain, 0), 0), win = list.reduce((s, r) => s + Math.max(r.gain, 0), 0), bal = win + loss;
+    $("gvSums").innerHTML = list.length ? `<span class="muted">Verlust<b class="num neg">${signed(loss)}</b></span><span class="muted">Saldo<b class="num ${bal < 0 ? "neg" : "pos"}">${signed(bal)}</b></span><span class="muted">Gewinn<b class="num pos">${signed(win)}</b></span>` : "";
     const max = Math.max(...list.map((r) => Math.abs(r.gain)), 1);
     $("gv").innerHTML = list.length ? list.map((r) => {
       const w = (Math.abs(r.gain) / max * 100).toFixed(1), t = `${label(r.p)} · ${r.p.name}\n${signed(r.gain)} (${pct(r.pct)})`, val = `<span class="val">${signed(r.gain)}</span>`;
