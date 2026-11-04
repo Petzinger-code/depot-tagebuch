@@ -296,10 +296,11 @@ button.chip { cursor: pointer; }
 .gv .name:hover { color: var(--accent); }
 .gv .half { height: 22px; display: flex; align-items: center; }
 .gv .half.l { justify-content: flex-end; border-right: 1px solid var(--line-strong); }
-.gv .b { height: 14px; }
+.gv .b { height: 14px; flex-shrink: 0; min-width: 1px; }
 .gv .half.l .b { background: var(--bad-bar); border-radius: 4px 0 0 4px; }
 .gv .half.r .b { background: var(--good-bar); border-radius: 0 4px 4px 0; }
 .gv .val { font-family: var(--f-num); font-size: 12px; padding: 0 6px; color: var(--ink-2); white-space: nowrap; }
+.gv .val.pc { font-size: 11.5px; padding: 0 8px; }
 .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--ink-2); }
 td.num.hot { background: #ffe45c; color: #0f5a26; font-weight: 600; }
 .cards td.num.hot { border-radius: 6px; padding: 2px 6px; }
@@ -1129,10 +1130,10 @@ Sektor im Depot: ${sec ? `Ist ${pctU(sec.actual)}, Ziel ${pctU(sec.target)}` : "
     $("gvSums").innerHTML = list.length ? `<span class="muted">Verlust<b class="num neg">${signed(loss)}</b></span><span class="muted">Saldo<b class="num ${bal < 0 ? "neg" : "pos"}">${signed(bal)}</b></span><span class="muted">Gewinn<b class="num pos">${signed(win)}</b></span>` : "";
     const max = Math.max(...list.map((r) => Math.abs(r.gain)), 1);
     $("gv").innerHTML = list.length ? list.map((r) => {
-      const w = (Math.abs(r.gain) / max * 100).toFixed(1), t = `${label(r.p)} · ${r.p.name}\n${signed(r.gain)} (${pct(r.pct)})`, val = `<span class="val">${signed(r.gain)}</span>`;
+      const w = (Math.abs(r.gain) / max * 100).toFixed(1), t = `${label(r.p)} · ${r.p.name}\n${signed(r.gain)} (${pct(r.pct)})`, val = `<span class="val">${signed(r.gain)}</span>`, pc = `<span class="val pc ${cls(r.gain)}">${pct(r.pct)}</span>`;
       return `<div class="name" data-open="${esc(r.id)}" title="${esc(r.p.name)}">${esc(label(r.p))}</div>`
-        + `<div class="half l" data-tip="${esc(t)}">${r.gain < 0 ? val + `<div class="b" style="width:${w}%"></div>` : ""}</div>`
-        + `<div class="half r" data-tip="${esc(t)}">${r.gain >= 0 ? `<div class="b" style="width:${w}%"></div>` + val : ""}</div>`;
+        + `<div class="half l" data-tip="${esc(t)}">${r.gain < 0 ? val + `<div class="b" style="width:calc((100% - 92px) * ${w / 100})"></div>` : pc}</div>`
+        + `<div class="half r" data-tip="${esc(t)}">${r.gain >= 0 ? `<div class="b" style="width:calc((100% - 92px) * ${w / 100})"></div>` + val : pc}</div>`;
     }).join("") : `<div class="muted" style="grid-column:1/-1">Keine Positionen in dieser Ansicht.</div>`;
   }
 
