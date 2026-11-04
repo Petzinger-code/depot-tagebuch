@@ -786,7 +786,7 @@ input.n { font-family: var(--f-num); }
   }
 
   const COLS = {
-    open: [["symbol", "Tickerkennung", "l"], ["name", "Name", "l"], ["shares", "Anteile"], ["avg", "Ø Einstieg"], ["price", "Kurs"], ["value", "Marktwert"], ["gain", "G/V"], ["pct", "G/V %"], ["share", "Anteil"]],
+    open: [["symbol", "Tickerkennung", "l"], ["name", "Name", "l"], ["shares", "Anteile"], ["avg", "Ø Einstieg"], ["price", "Kurs"], ["value", "Marktwert"], ["costOpen", "Investiert"], ["gain", "G/V"], ["pct", "G/V %"], ["share", "Anteil"]],
     closed: [["symbol", "Tickerkennung", "l"], ["name", "Name", "l"], ["entry", "Einstieg"], ["exit", "Ausstieg"], ["invested", "Investiert"], ["sold", "Erlös"], ["gain", "G/V"], ["pct", "G/V %"], ["re", "", ""]],
   };
   function sortVal(r, k) {
@@ -817,23 +817,24 @@ input.n { font-family: var(--f-num); }
         const old = daysSince(p.priceDate) > STALE_DAYS;
         const conv = r.cur !== "EUR" ? `data-tip="${esc(money(r.price, r.cur))} = ${esc(eur(r.priceEur))} (EZB ${f4.format(r.rate)})"` : "";
         const priceCell = `<span class="price-cell"><span class="price-wrap" ${conv}><input class="price-in" data-price="${esc(r.id)}" inputmode="decimal" value="${inNum(p.price)}" aria-label="Aktueller Kurs ${esc(label(p))}">${r.cur !== "EUR" ? `<small>${esc(r.cur)}</small>` : ""}</span><span class="price-date ${old ? "old" : ""}" ${old ? `data-tip="Kurs ist älter als ${STALE_DAYS} Tage"` : ""}>${fDate(p.priceDate)}</span></span>`;
-        return `<tr class="row ${p.test ? "test-row" : ""}" data-open="${esc(r.id)}">${sym}${name}<td class="num c-opt" data-k="Anteile">${fShares(r.shares)}</td><td class="num c-opt" data-k="Ø Einstieg">${eur(r.avg)}</td><td class="c-price" data-k="Kurs">${priceCell}</td><td class="num" data-k="Marktwert">${eur(r.value)}</td>${g}<td class="num c-opt" data-k="Anteil">${pctU(total ? r.value / total : 0)}</td></tr>`;
+        return `<tr class="row ${p.test ? "test-row" : ""}" data-open="${esc(r.id)}">${sym}${name}<td class="num c-opt" data-k="Anteile">${fShares(r.shares)}</td><td class="num c-opt" data-k="Ø Einstieg">${eur(r.avg)}</td><td class="c-price" data-k="Kurs">${priceCell}</td><td class="num" data-k="Marktwert">${eur(r.value)}</td><td class="num" data-k="Investiert" data-tip="Einstand der gehaltenen Anteile in EUR (ohne Gebühren)">${eur(r.costOpen)}</td>${g}<td class="num c-opt" data-k="Anteil">${pctU(total ? r.value / total : 0)}</td></tr>`;
       }
       return `<tr class="row" data-open="${esc(r.id)}">${sym}${name}<td class="num c-opt" data-k="Einstieg">${fDate(r.entry)}</td><td class="num" data-k="Ausstieg">${fDate(r.exit)}</td><td class="num" data-k="Investiert">${eur(r.invested)}</td><td class="num" data-k="Erlös">${eur(r.sold)}</td>${g}<td data-k=""><button type="button" class="small" data-reentry="${esc(r.id)}">Wieder einsteigen</button></td></tr>`;
     };
     let body = list.map(rowHtml).join("");
     if (showCash) {
       const accs = accList();
-      body += `<tr class="row cash-row" data-act="cash"><td class="c-sym"><span class="sym">CASH</span></td><td class="l c-name"><div class="p-name"><b>Cash-Reserven</b><span>${accs.length} ${accs.length === 1 ? "Konto" : "Konten"}${accs.length ? " · " + accs.map(([, a]) => esc(a.name)).join(", ") : ""}</span></div></td><td class="c-hide"></td><td class="c-hide"></td><td class="c-hide"></td><td class="num" data-k="Wert">${eur(cash)}</td><td class="num c-gain muted">Konten ›</td><td class="c-hide"></td><td class="num" data-k="Anteil">${pctU(total ? cash / total : 0)}</td></tr>`;
+      body += `<tr class="row cash-row" data-act="cash"><td class="c-sym"><span class="sym">CASH</span></td><td class="l c-name"><div class="p-name"><b>Cash-Reserven</b><span>${accs.length} ${accs.length === 1 ? "Konto" : "Konten"}${accs.length ? " · " + accs.map(([, a]) => esc(a.name)).join(", ") : ""}</span></div></td><td class="c-hide"></td><td class="c-hide"></td><td class="c-hide"></td><td class="num" data-k="Wert">${eur(cash)}</td><td class="num muted c-hide">–</td><td class="num c-gain muted">Konten ›</td><td class="c-hide"></td><td class="num" data-k="Anteil">${pctU(total ? cash / total : 0)}</td></tr>`;
     }
     if (test.length) {
-      body += `<tr class="test-head" data-act="toggletest" title="Ein- oder ausklappen"><td colspan="9"><span class="caret">${state.testCollapsed ? "▸" : "▾"}</span> <span class="chip test">TEST</span> ${test.length} Testpositionen · nicht im echten Depot · <u>${state.testCollapsed ? "ausklappen" : "einklappen"}</u></td></tr>` + (state.testCollapsed ? "" : test.map(rowHtml).join(""));
+      body += `<tr class="test-head" data-act="toggletest" title="Ein- oder ausklappen"><td colspan="10"><span class="caret">${state.testCollapsed ? "▸" : "▾"}</span> <span class="chip test">TEST</span> ${test.length} Testpositionen · nicht im echten Depot · <u>${state.testCollapsed ? "ausklappen" : "einklappen"}</u></td></tr>` + (state.testCollapsed ? "" : test.map(rowHtml).join(""));
     }
     const sumG = list.reduce((s, r) => s + r.gain, 0), depot = list.reduce((s, r) => s + r.value, 0) + (showCash ? cash : 0);
-    const tV = test.reduce((s, r) => s + r.value, 0), tG = test.reduce((s, r) => s + r.gain, 0);
+    const tV = test.reduce((s, r) => s + r.value, 0), tG = test.reduce((s, r) => s + r.gain, 0), tI = test.reduce((s, r) => s + r.costOpen, 0);
+    const sumI = list.reduce((s, r) => s + r.costOpen, 0);
     const foot = tab === "open"
-      ? `<tr><td>Summe</td><td class="l muted small c-name">inkl. Cash</td><td class="c-hide"></td><td class="c-hide"></td><td class="c-hide"></td><td class="num" data-k="Depotwert">${eur(depot)}</td><td class="num c-gain ${cls(sumG)}">${signed(sumG)}</td><td class="c-hide"></td><td class="c-hide"></td></tr>`
-        + (test.length ? `<tr class="test-sum"><td>+ Test</td><td class="l small c-name">mit Testpositionen: ${eur(depot + tV)}</td><td class="c-hide"></td><td class="c-hide"></td><td class="c-hide"></td><td class="num" data-k="Testwert">+ ${eur(tV)}</td><td class="num c-gain">${signed(tG)}</td><td class="c-hide"></td><td class="c-hide"></td></tr>` : "")
+      ? `<tr><td>Summe</td><td class="l muted small c-name">inkl. Cash</td><td class="c-hide"></td><td class="c-hide"></td><td class="c-hide"></td><td class="num" data-k="Depotwert">${eur(depot)}</td><td class="num" data-k="Investiert" data-tip="Summe Investiert der offenen Positionen (ohne Cash)">${eur(sumI)}</td><td class="num c-gain ${cls(sumG)}">${signed(sumG)}</td><td class="c-hide"></td><td class="c-hide"></td></tr>`
+        + (test.length ? `<tr class="test-sum"><td>+ Test</td><td class="l small c-name">mit Testpositionen: ${eur(depot + tV)}</td><td class="c-hide"></td><td class="c-hide"></td><td class="c-hide"></td><td class="num" data-k="Testwert">+ ${eur(tV)}</td><td class="num" data-k="Investiert">+ ${eur(tI)}</td><td class="num c-gain">${signed(tG)}</td><td class="c-hide"></td><td class="c-hide"></td></tr>` : "")
       : `<tr><td>Summe</td><td class="c-hide"></td><td class="c-hide"></td><td class="c-hide"></td><td class="num" data-k="Investiert">${eur(list.reduce((s, r) => s + r.invested, 0))}</td><td class="num" data-k="Erlös">${eur(list.reduce((s, r) => s + r.sold, 0))}</td><td class="num c-gain ${cls(sumG)}">${signed(sumG)}</td><td class="c-hide"></td><td class="c-hide"></td></tr>`;
     const focused = document.activeElement?.dataset?.price;
     $("table").innerHTML = `<table class="cards"><thead><tr>${head}</tr></thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table>`;
