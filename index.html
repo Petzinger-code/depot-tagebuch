@@ -301,8 +301,8 @@ button.chip { cursor: pointer; }
 .gv .half.r .b { background: var(--good-bar); border-radius: 0 4px 4px 0; }
 .gv .val { font-family: var(--f-num); font-size: 12px; padding: 0 6px; color: var(--ink-2); white-space: nowrap; }
 .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--ink-2); }
-td.c-gain.hot { background: #ffe45c; color: #0f5a26; }
-.cards td.c-gain.hot { border-radius: 6px; padding: 2px 6px; }
+td.num.hot { background: #ffe45c; color: #0f5a26; font-weight: 600; }
+.cards td.num.hot { border-radius: 6px; padding: 2px 6px; }
 .gv-sums { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; }
 .gv-sums span { white-space: nowrap; } .gv-sums b { font-weight: 600; margin-left: 4px; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
@@ -817,7 +817,7 @@ input.n { font-family: var(--f-num); }
       const flags = (p.test ? `<span class="chip test">TEST</span> ` : "") + (r.cur !== "EUR" ? `<span class="chip mono">${esc(r.cur)}</span> ` : "") + (r.future ? `<span class="chip warn" data-tip="Ein Buchungsdatum liegt in der Zukunft">Datum prüfen</span>` : "");
       const sym = `<td class="c-sym"><span class="sym-cell">${p.test ? `<span class="sym-row"><button type="button" class="xdel" data-drop-test="${esc(r.id)}" title="Planposition komplett löschen" aria-label="Planposition ${esc(label(p))} löschen">×</button><span class="sym">${esc(label(p))}</span></span>` : `<span class="sym">${esc(label(p))}</span>`}${flags ? `<span>${flags}</span>` : ""}</span></td>`;
       const name = `<td class="l c-name"><div class="p-name"><b>${esc(p.name)}</b><span>${esc(p.sector)}${p.broker ? " · " + esc(p.broker) : ""}</span></div></td>`;
-      const g = `<td class="num c-gain ${cls(r.gain)}${r.pct > 0.3 ? " hot" : ""}"${r.pct > 0.3 ? ` data-tip="Gewinn über 30 %"` : ""}>${signed(r.gain)}</td><td class="num ${cls(r.gain)}" data-k="G/V %">${pct(r.pct)}</td>`;
+      const g = `<td class="num c-gain ${cls(r.gain)}">${signed(r.gain)}</td><td class="num ${cls(r.gain)}${r.pct > 0.3 ? " hot" : ""}" data-k="G/V %"${r.pct > 0.3 ? ` data-tip="Gewinn über 30 %"` : ""}>${pct(r.pct)}</td>`;
       if (tab === "open") {
         const old = daysSince(p.priceDate) > STALE_DAYS;
         const conv = r.cur !== "EUR" ? `data-tip="${esc(money(r.price, r.cur))} = ${esc(eur(r.priceEur))} (EZB ${f4.format(r.rate)})"` : "";
