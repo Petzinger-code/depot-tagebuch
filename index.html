@@ -223,6 +223,8 @@ tfoot td { font-weight: 600; border-bottom: 0; border-top: 1px solid var(--line-
 .p-name b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .p-name span { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 999px; background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--line); white-space: nowrap; }
+a.chip.tv { text-decoration: none; color: var(--accent); }
+a.chip.tv:hover { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 .chip.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
 .chip.bad { background: var(--bad-soft); color: var(--bad); border-color: transparent; }
 .chip.info { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
@@ -797,6 +799,13 @@ input.n { font-family: var(--f-num); }
     open: [["symbol", "Tickerkennung", "l"], ["name", "Name", "l"], ["shares", "Anteile"], ["avg", "Ø Einstieg"], ["price", "Kurs"], ["value", "Marktwert"], ["costOpen", "Investiert"], ["gain", "G/V"], ["pct", "G/V %"], ["share", "Anteil"]],
     closed: [["symbol", "Tickerkennung", "l"], ["name", "Name", "l"], ["entry", "Einstieg"], ["exit", "Ausstieg"], ["invested", "Investiert"], ["sold", "Erlös"], ["gain", "G/V"], ["pct", "G/V %"], ["re", "", ""]],
   };
+  // TradingView symbol: stored by the nightly routine (p.tv), else a best guess from crypto ticker or symbol
+  function tvSymbol(p) {
+    if (p.tv) return p.tv;
+    const t = (p.ticker || p.symbol || "").toUpperCase();
+    if (/krypto/i.test(p.sector || "")) { const b = (/SOLANA/.test(t + (p.name || "").toUpperCase()) ? "SOL" : t.replace(/(EUR|EU|USD)$/, "")); return b ? `COINBASE:${b}EUR` : ""; }
+    return p.isin && p.symbol && !/^[A-Z]{2}[A-Z0-9]{9}\d$/.test(p.symbol) ? p.symbol : "";
+  }
   function sortVal(r, k) {
     if (k === "symbol") return label(r.p).toLowerCase();
     if (k === "name") return (r.p.name || "").toLowerCase();
@@ -820,7 +829,8 @@ input.n { font-family: var(--f-num); }
     const head = COLS[tab].map(([k, l, a]) => k === "re" ? `<th></th>` : k === "name" ? `<th class="l th-ns"><span class="sortable${sk === "name" ? " on" : ""}" data-sort="name">Name${arrow("name")}</span> / <span class="sortable${sk === "sector" ? " on" : ""}" data-sort="sector">Sektor${arrow("sector")}</span></th>` : `<th class="sortable ${a || ""}" data-sort="${k}">${l}<span class="arrow">${sk === k ? (sd > 0 ? "↑" : "↓") : ""}</span></th>`).join("");
     const rowHtml = (r) => {
       const p = r.p;
-      const flags = (p.test ? `<span class="chip test">TEST</span> ` : "") + (r.cur !== "EUR" ? `<span class="chip mono">${esc(r.cur)}</span> ` : "") + (r.future ? `<span class="chip warn" data-tip="Ein Buchungsdatum liegt in der Zukunft">Datum prüfen</span>` : "");
+      const tvs = tvSymbol(p), tv = tvs ? `<a class="chip tv" href="https://www.tradingview.com/chart/?symbol=${encodeURIComponent(tvs)}" target="_blank" rel="noopener" title="${esc(tvs)} in TradingView öffnen" aria-label="${esc(label(p))} in TradingView öffnen">TV ↗</a> ` : "";
+      const flags = tv + (p.test ? `<span class="chip test">TEST</span> ` : "") + (r.cur !== "EUR" ? `<span class="chip mono">${esc(r.cur)}</span> ` : "") + (r.future ? `<span class="chip warn" data-tip="Ein Buchungsdatum liegt in der Zukunft">Datum prüfen</span>` : "");
       const sym = `<td class="c-sym"><span class="sym-cell">${p.test ? `<span class="sym-row"><button type="button" class="xdel" data-drop-test="${esc(r.id)}" title="Planposition komplett löschen" aria-label="Planposition ${esc(label(p))} löschen">×</button><span class="sym">${esc(label(p))}</span></span>` : `<span class="sym">${esc(label(p))}</span>`}${flags ? `<span>${flags}</span>` : ""}</span></td>`;
       const name = `<td class="l c-name"><div class="p-name"><b>${esc(p.name)}</b><span>${esc(p.sector)}${p.broker ? " · " + esc(p.broker) : ""}</span></div></td>`;
       const g = `<td class="num c-gain ${cls(r.gain)}">${signed(r.gain)}</td><td class="num ${cls(r.gain)}${r.pct > 0.3 ? " hot" : ""}" data-k="G/V %"${r.pct > 0.3 ? ` data-tip="Gewinn über 30 %"` : ""}>${pct(r.pct)}</td>`;
@@ -1537,6 +1547,7 @@ Sektor im Depot: ${sec ? `Ist ${pctU(sec.actual)}, Ziel ${pctU(sec.target)}` : "
   // ---------- events ----------
   document.addEventListener("click", async (e) => {
     const t = e.target;
+    if (t.closest("a.tv")) return;
     const modeEl = t.closest("[data-mode]"); if (modeEl) state.viewMode = modeEl.dataset.mode; else if (!t.closest("dialog")) state.viewMode = "ist";
     if (t.closest("[data-close]")) { t.closest("dialog").close(); return; }
     const cp = t.closest("[data-copy]");
