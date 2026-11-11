@@ -1547,7 +1547,17 @@ Sektor im Depot: ${sec ? `Ist ${pctU(sec.actual)}, Ziel ${pctU(sec.target)}` : "
   // ---------- events ----------
   document.addEventListener("click", async (e) => {
     const t = e.target;
-    if (t.closest("a.tv")) return;
+    const tvA = t.closest("a.tv");
+    if (tvA) {
+      // open as a separate browser window (not a tab); phones fall back to a tab on their own
+      if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        e.preventDefault();
+        const w = Math.min(1400, screen.availWidth - 60), h = Math.min(900, screen.availHeight - 60);
+        const left = (screen.availLeft || 0) + Math.round((screen.availWidth - w) / 2), top = (screen.availTop || 0) + Math.round((screen.availHeight - h) / 2);
+        window.open(tvA.href, "_blank", `popup=yes,width=${w},height=${h},left=${left},top=${top},noopener`);
+      }
+      return;
+    }
     const modeEl = t.closest("[data-mode]"); if (modeEl) state.viewMode = modeEl.dataset.mode; else if (!t.closest("dialog")) state.viewMode = "ist";
     if (t.closest("[data-close]")) { t.closest("dialog").close(); return; }
     const cp = t.closest("[data-copy]");
